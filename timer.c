@@ -55,7 +55,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
 
 /* Entrypoint for TIMER.NEW command.
  * This command creates a new timer.
- * Syntax: TIMER.NEW milliseconds sha1 [LOOP]
+ * Syntax: TIMER.NEW key data sha1 interval [LOOP]
  * If LOOP is specified, after executing a new timer is created
  */
 int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
@@ -100,30 +100,32 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     /* add the timer to the list of timers */
     RedisModule_DictSet(timers, td->key, td);
     
-    RedisModule_ReplyWithLongLong(ctx, 1);
+    RedisModule_ReplyWithSimpleString(ctx, "OK");
     return REDISMODULE_OK;
 }
 
 /* Entrypoint for TIMER.KILL command.
- * This command terminates an existing timer.
- * Syntax: TIMER.KILL key
+ * This command terminates existing timers.
+ * Syntax: TIMER.KILL key [key ...]
  */
 int TimerKillCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     TimerData *td;
+    long long deleted = 0;
 
     /* check arguments */
-    if (argc != 2) {
+    if (argc <= 1) {
         return RedisModule_WrongArity(ctx);
     }
 
-    if (RedisModule_DictDel(timers, argv[1], &td) == REDISMODULE_ERR) {
-        return RedisModule_ReplyWithLongLong(ctx, 0);
+    for (int i = 1; i < argc; i++) {
+        if (RedisModule_DictDel(timers, argv[1], &td) == REDISMODULE_OK) {
+            /* stop timer and free*/
+            RedisModule_StopTimer(ctx, td->tid, NULL);
+            DeleteTimerData(td);
+            deleted++;
+        }
     }
-
-    /* stop timer and free*/
-    RedisModule_StopTimer(ctx, td->tid, NULL);
-    DeleteTimerData(td);
-    RedisModule_ReplyWithLongLong(ctx, 1);
+    RedisModule_ReplyWithLongLong(ctx, deleted);
     return REDISMODULE_OK;
 }
 

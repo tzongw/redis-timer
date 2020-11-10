@@ -141,8 +141,7 @@ int TimerKillCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 }
 
 /* Module entrypoint */
-int RedisModule_OnLoad(RedisModuleCtx *ctx) {
-
+int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     /* Register the module itself */
     if (RedisModule_Init(ctx, "timer", 1, REDISMODULE_APIVER_1) == REDISMODULE_ERR) {
         return REDISMODULE_ERR;
@@ -160,10 +159,14 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx) {
     /* initialize map */
     timers = RedisModule_CreateDict(NULL);
     
+    long long port = 6379;
+    if (argc > 0 && RedisModule_StringToLongLong(argv[0], &port) != REDISMODULE_OK) {
+        return REDISMODULE_ERR;
+    }
     struct sockaddr_in    servaddr;
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(6379);
+    servaddr.sin_port = htons(port);
     inet_pton(AF_INET, "127.0.0.1", &servaddr.sin_addr);
     client = socket(AF_INET, SOCK_STREAM, 0);
     connect(client, (struct sockaddr*)&servaddr, sizeof(servaddr));

@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 
 #define REDISMODULE_EXPERIMENTAL_API
 #include "redismodule.h"
@@ -26,7 +27,7 @@ void DeleteTimerData(TimerData *td);
 static RedisModuleDict *timers;
 static int client;
 static const char ping[] = "ping\r\n";
-static char pong[] = "+PONG\r\n";
+static char pong[1024];
  
 
 /* release all the memory used in timer structure */
@@ -57,9 +58,8 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         RedisModule_DictDel(timers, td->key, NULL);
         DeleteTimerData(td);
     }
-    
-    ssize_t sent = send(client, ping, sizeof(ping)-1, 0);
     ssize_t received = recv(client, pong, sizeof(pong)-1, 0);
+    ssize_t sent = send(client, ping, sizeof(ping)-1, 0);
     REDISMODULE_NOT_USED(sent);
     REDISMODULE_NOT_USED(received);
 }
@@ -169,6 +169,8 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     servaddr.sin_port = htons(port);
     inet_pton(AF_INET, "127.0.0.1", &servaddr.sin_addr);
     client = socket(AF_INET, SOCK_STREAM, 0);
+    int flags = fcntl(client, F_GETFL);
+    fcntl(client, F_SETFL, flags | O_NONBLOCK);
     connect(client, (struct sockaddr*)&servaddr, sizeof(servaddr));
     return REDISMODULE_OK;
 }

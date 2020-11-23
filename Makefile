@@ -15,7 +15,7 @@ ifeq ($(DEBUG), 1)
 	DEBUG_FLAGS ?= -g -ggdb
 endif
 
-CFLAGS = -Wall -g -fPIC -std=gnu99
+CFLAGS = -Wall -fPIC -std=gnu99
 CC=gcc
 
 all: timer.so

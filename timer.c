@@ -58,7 +58,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         RedisModule_DictDel(timers, td->key, NULL);
         DeleteTimerData(td);
     }
-    ssize_t received = recv(client, pong, sizeof(pong)-1, 0);
+    ssize_t received = recv(client, pong, sizeof(pong), 0);
     ssize_t sent = send(client, ping, sizeof(ping)-1, 0);
     REDISMODULE_NOT_USED(sent);
     REDISMODULE_NOT_USED(received);

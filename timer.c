@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 #include <fcntl.h>
 
 #define REDISMODULE_EXPERIMENTAL_API
@@ -172,5 +173,18 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     int flags = fcntl(client, F_GETFL);
     fcntl(client, F_SETFL, flags | O_NONBLOCK);
     connect(client, (struct sockaddr*)&servaddr, sizeof(servaddr));
+    return REDISMODULE_OK;
+}
+
+int RedisModule_OnUnload(RedisModuleCtx *ctx) {
+    TimerData *td = NULL;
+    RedisModuleDictIter *di = RedisModule_DictIteratorStartC(timers, "^", NULL, 0);
+    while (RedisModule_DictNextC(di, NULL, (void**)&td)) {
+        RedisModule_StopTimer(ctx, td->tid, NULL);
+        DeleteTimerData(td);
+    }
+    RedisModule_DictIteratorStop(di);
+    RedisModule_FreeDict(NULL, timers);
+    close(client);
     return REDISMODULE_OK;
 }

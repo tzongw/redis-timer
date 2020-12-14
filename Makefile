@@ -24,7 +24,7 @@ timer.so: timer.o
 	$(LD) -o $@ $< $(SHOBJ_LDFLAGS) $(LIBS)
 
 .c.o:
-	$(CC) -I. $(CFLAGS) $(DEBUG_FLAGS) $(SHOBJ_CFLAGS) -fPIC -c $< -o $@
+	$(CC) -I. $(CFLAGS) $(DEBUG_FLAGS) $(SHOBJ_CFLAGS) -c $< -o $@
 
 clean:
 	rm -rf *.so *.o

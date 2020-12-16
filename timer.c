@@ -27,7 +27,7 @@ void DeleteTimerData(TimerData *td);
 /* internal structure for storing timers */
 static RedisModuleDict *timers;
 static int serv;
-static const char ping[] = "ping\r\n";
+static const char ping[] = "PING\r\n";
 static char pong[1024];
  
 

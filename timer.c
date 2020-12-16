@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <netinet/tcp.h>
 
 #define REDISMODULE_EXPERIMENTAL_API
 #include "redismodule.h"
@@ -164,14 +165,17 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     if (argc > 0 && RedisModule_StringToLongLong(argv[0], &port) != REDISMODULE_OK) {
         return REDISMODULE_ERR;
     }
+    serv = socket(AF_INET, SOCK_STREAM, 0);
+    int flags = fcntl(serv, F_GETFL);
+    fcntl(serv, F_SETFL, flags | O_NONBLOCK);
+    int flag = 1;
+    setsockopt(serv, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+
     struct sockaddr_in    servaddr;
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(port);
     inet_pton(AF_INET, "127.0.0.1", &servaddr.sin_addr);
-    serv = socket(AF_INET, SOCK_STREAM, 0);
-    int flags = fcntl(serv, F_GETFL);
-    fcntl(serv, F_SETFL, flags | O_NONBLOCK);
     connect(serv, (struct sockaddr*)&servaddr, sizeof(servaddr));
     return REDISMODULE_OK;
 }

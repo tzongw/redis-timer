@@ -4,29 +4,26 @@ uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 
 # Compile flags for linux / osx
 ifeq ($(uname_S),Linux)
-	SHOBJ_CFLAGS ?=  -fno-common
-	SHOBJ_LDFLAGS ?= -shared -Bsymbolic
+	SHOBJ_CFLAGS ?= -W -Wall -fno-common -std=c99 -O2
+	SHOBJ_LDFLAGS ?= -shared
 else
-	SHOBJ_CFLAGS ?= -dynamic -fno-common
+	SHOBJ_CFLAGS ?= -W -Wall -dynamic -fno-common -std=c99 -O2
 	SHOBJ_LDFLAGS ?= -bundle -undefined dynamic_lookup
 endif
 
-ifeq ($(DEBUG), 1)
-	DEBUG_FLAGS ?= -g -ggdb
-endif
-
-CFLAGS = -Wall -fPIC -std=gnu99
-CC=gcc
+.SUFFIXES: .c .so .xo .o
 
 all: timer.so
 
-timer.so: timer.o
+.c.xo:
+	$(CC) -I. $(CFLAGS) $(SHOBJ_CFLAGS) -fPIC -c $< -o $@
+
+timer.xo: redismodule.h
+
+timer.so: timer.xo
 	$(LD) -o $@ $< $(SHOBJ_LDFLAGS) $(LIBS)
 
-.c.o:
-	$(CC) -I. $(CFLAGS) $(DEBUG_FLAGS) $(SHOBJ_CFLAGS) -c $< -o $@
-
 clean:
-	rm -rf *.so *.o
+	rm -rf *.xo *.so *.o
 
 FORCE:

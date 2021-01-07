@@ -1,5 +1,5 @@
-
 #include <string.h>
+#include <strings.h>
 #include <stdbool.h>
 #include <pthread.h>
 #include <sys/socket.h>

@@ -27,10 +27,6 @@ void DeleteTimerData(TimerData *td);
 
 /* internal structure for storing timers */
 static RedisModuleDict *timers;
-static int serv;
-static const char ping[] = "PING\r\n";
-static char pong[1024];
- 
 
 /* release all the memory used in timer structure */
 void DeleteTimerData(TimerData *td) {
@@ -60,10 +56,6 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         RedisModule_DictDel(timers, td->key, NULL);
         DeleteTimerData(td);
     }
-    ssize_t received = recv(serv, pong, sizeof(pong), 0);
-    ssize_t sent = send(serv, ping, sizeof(ping)-1, 0);
-    REDISMODULE_NOT_USED(sent);
-    REDISMODULE_NOT_USED(received);
 }
 
 /* Entrypoint for TIMER.NEW command.
@@ -144,6 +136,8 @@ int TimerKillCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
 /* Module entrypoint */
 int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    REDISMODULE_NOT_USED(argv);
+    REDISMODULE_NOT_USED(argc);
     /* Register the module itself */
     if (RedisModule_Init(ctx, "timer", 1, REDISMODULE_APIVER_1) == REDISMODULE_ERR) {
         return REDISMODULE_ERR;
@@ -160,23 +154,6 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     
     /* initialize map */
     timers = RedisModule_CreateDict(NULL);
-    
-    long long port = 6379;
-    if (argc > 0 && RedisModule_StringToLongLong(argv[0], &port) != REDISMODULE_OK) {
-        return REDISMODULE_ERR;
-    }
-    serv = socket(AF_INET, SOCK_STREAM, 0);
-    int flags = fcntl(serv, F_GETFL);
-    fcntl(serv, F_SETFL, flags | O_NONBLOCK);
-    int flag = 1;
-    setsockopt(serv, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
-
-    struct sockaddr_in    servaddr;
-    memset(&servaddr, 0, sizeof(servaddr));
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(port);
-    inet_pton(AF_INET, "127.0.0.1", &servaddr.sin_addr);
-    connect(serv, (struct sockaddr*)&servaddr, sizeof(servaddr));
     return REDISMODULE_OK;
 }
 
@@ -189,6 +166,5 @@ int RedisModule_OnUnload(RedisModuleCtx *ctx) {
     }
     RedisModule_DictIteratorStop(di);
     RedisModule_FreeDict(NULL, timers);
-    close(serv);
     return REDISMODULE_OK;
 }

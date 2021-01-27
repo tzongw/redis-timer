@@ -68,30 +68,25 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
 
 /* Entrypoint for TIMER.NEW command.
  * This command creates a new timer.
- * Syntax: TIMER.NEW key data sha1 interval [LOOP]
- * If LOOP is specified, after executing a new timer is created
+ * Syntax: TIMER.NEW key data sha1 delay [interval]
+ * If interval is specified, after executing a new timer is created
  */
 int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
-    long long interval;
-    bool loop = false;
+    long long delay = 0;
+    long long interval = 0;
     TimerData *td = NULL;
-    const char *s;
 
     // check arguments
     if (argc < 5 || argc > 6) {
         return RedisModule_WrongArity(ctx);
     }
 
-    if (RedisModule_StringToLongLong(argv[4], &interval) != REDISMODULE_OK) {
-        return RedisModule_ReplyWithError(ctx, "ERR invalid interval");
+    if (RedisModule_StringToLongLong(argv[4], &delay) != REDISMODULE_OK) {
+        return RedisModule_ReplyWithError(ctx, "ERR invalid delay");
     }
 
-    if (argc == 6) {
-        s = RedisModule_StringPtrLen(argv[5], NULL);
-        if (strcasecmp(s, "LOOP")) {
-            return RedisModule_ReplyWithError(ctx, "ERR invalid argument");
-        }
-        loop = true;
+    if (argc == 6 && RedisModule_StringToLongLong(argv[5], &interval) != REDISMODULE_OK) {
+        return RedisModule_ReplyWithError(ctx, "ERR invalid interval");
     }
     
     if (RedisModule_DictDel(timers, argv[1], &td) == REDISMODULE_OK) {
@@ -105,10 +100,10 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     td->key = RedisModule_CreateStringFromString(NULL, argv[1]);
     td->data = RedisModule_CreateStringFromString(NULL, argv[2]);
     td->sha1 = RedisModule_CreateStringFromString(NULL, argv[3]);
-    td->interval = loop ? interval : 0;
+    td->interval = interval;
 
     /* create the timer through the Timer API */
-    td->tid = RedisModule_CreateTimer(ctx, interval, TimerCallback, td);
+    td->tid = RedisModule_CreateTimer(ctx, delay, TimerCallback, td);
 
     /* add the timer to the list of timers */
     RedisModule_DictSet(timers, td->key, td);

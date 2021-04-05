@@ -27,7 +27,7 @@ void DeleteTimerData(TimerData *td);
 
 /* internal structure for storing timers */
 static RedisModuleDict *timers;
-static int serv;
+static int serv = -1;
 static const char ping[] = "PING\r\n";
 static char pong[1024];
  
@@ -60,10 +60,12 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         RedisModule_DictDel(timers, td->key, NULL);
         DeleteTimerData(td);
     }
-    ssize_t received = recv(serv, pong, sizeof(pong), 0);
-    ssize_t sent = send(serv, ping, sizeof(ping)-1, 0);
-    REDISMODULE_NOT_USED(sent);
-    REDISMODULE_NOT_USED(received);
+    if (serv != -1) {
+        ssize_t received = recv(serv, pong, sizeof(pong), 0);
+        ssize_t sent = send(serv, ping, sizeof(ping)-1, 0);
+        REDISMODULE_NOT_USED(sent);
+        REDISMODULE_NOT_USED(received);
+    }
 }
 
 /* Entrypoint for TIMER.NEW command.
@@ -161,8 +163,10 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     /* initialize map */
     timers = RedisModule_CreateDict(NULL);
     
-    long long port = 6379;
-    if (argc > 0 && RedisModule_StringToLongLong(argv[0], &port) != REDISMODULE_OK) {
+    if (argc <= 0) return REDISMODULE_OK;
+    
+    long long port;
+    if (RedisModule_StringToLongLong(argv[0], &port) != REDISMODULE_OK) {
         return REDISMODULE_ERR;
     }
     serv = socket(AF_INET, SOCK_STREAM, 0);
@@ -189,6 +193,6 @@ int RedisModule_OnUnload(RedisModuleCtx *ctx) {
     }
     RedisModule_DictIteratorStop(di);
     RedisModule_FreeDict(NULL, timers);
-    close(serv);
+    if (serv != -1) close(serv);
     return REDISMODULE_OK;
 }

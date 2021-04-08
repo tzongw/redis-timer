@@ -30,6 +30,8 @@ static RedisModuleDict *timers;
 static int serv = -1;
 static const char ping[] = "PING\r\n";
 static char pong[1024];
+static const ssize_t pingSize = sizeof(ping)-1; // exclude '\0'
+static ssize_t pingOffset = 0;
  
 
 /* release all the memory used in timer structure */
@@ -62,9 +64,11 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
     }
     if (serv != -1) {
         ssize_t received = recv(serv, pong, sizeof(pong), 0);
-        ssize_t sent = send(serv, ping, sizeof(ping)-1, 0);
-        REDISMODULE_NOT_USED(sent);
         REDISMODULE_NOT_USED(received);
+        ssize_t sent = send(serv, ping+pingOffset, pingSize-pingOffset, 0);
+        if (sent > 0) {
+            pingOffset = (pingOffset+sent) % pingSize;
+        }
     }
 }
 

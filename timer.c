@@ -17,7 +17,7 @@ typedef struct TimerData {
     RedisModuleString *key;        /* user timer id */
     RedisModuleString *data;     /* user timer data */
     RedisModuleString *sha1;    /* sha1 for the script to execute */
-    mstime_t interval;          /* looping interval */
+    mstime_t interval;          /* interval */
     bool loop;                   /* loop timer */
     RedisModuleTimerID tid;     /* internal id for the timer API */
 } TimerData;
@@ -28,7 +28,7 @@ void DeleteTimerData(TimerData *td);
 
 /* internal structure for storing timers */
 static RedisModuleDict *timers;
-static int serv = -1;
+static int serv = -1;  /* used to wake up redis(fixed at 6.0) */
 static const char ping[] = "PING\r\n";
 static char pong[1024];
 static const ssize_t pingSize = sizeof(ping)-1; // exclude '\0'
@@ -51,7 +51,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
     td = (TimerData*)data;
 
     /* execute the script */
-    rep = RedisModule_Call(ctx, "EVALSHA", "sls", td->sha1, 0, td->data);
+    rep = RedisModule_Call(ctx, "EVALSHA", "sls", td->sha1, 0L, td->data);
     RedisModule_FreeCallReply(rep);
 
     /* if loop, create a new timer and reinsert
@@ -80,6 +80,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
  */
 int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     long long interval;
+    long long added = 1; /* new or replace */
     bool loop = false;
     TimerData *td = NULL;
     const char *s;
@@ -104,19 +105,11 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         loop = true;
     }
     
-    if ((td = RedisModule_DictGet(timers, key, NULL)) != NULL) {
-        if (RedisModule_StringCompare(td->data, data) == 0 &&
-            RedisModule_StringCompare(td->sha1, sha1) == 0 &&
-            td->interval == interval && td->loop == loop) {
-            // same timer, ignore; kill first if want reset timer
-            RedisModule_ReplyWithLongLong(ctx, 0);
-            return REDISMODULE_OK;
-        }
-        else {
-            RedisModule_DictDel(timers, key, NULL);
-            RedisModule_StopTimer(ctx, td->tid, NULL);
-            DeleteTimerData(td);
-        }
+    if (RedisModule_DictDel(timers, key, &td) == REDISMODULE_OK) {
+        RedisModule_StopTimer(ctx, td->tid, NULL);
+        DeleteTimerData(td);
+        td = NULL;
+        added = 0;
     }
 
     /* allocate structure and init */
@@ -133,7 +126,7 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     /* add the timer to the list of timers */
     RedisModule_DictSet(timers, td->key, td);
     
-    RedisModule_ReplyWithLongLong(ctx, 1);
+    RedisModule_ReplyWithLongLong(ctx, added);
     return REDISMODULE_OK;
 }
 

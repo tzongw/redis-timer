@@ -33,7 +33,14 @@ static const char ping[] = "PING\r\n";
 static char pong[1024];
 static const ssize_t pingSize = sizeof(ping)-1; // exclude '\0'
 static ssize_t pingOffset = 0;
- 
+static bool isMaster = true;
+
+
+void roleChangeCallback(RedisModuleCtx *ctx, RedisModuleEvent e, uint64_t sub, void *data)
+{
+    isMaster = (sub == REDISMODULE_EVENT_REPLROLECHANGED_NOW_MASTER);
+    RedisModule_Log(ctx, "notice", "role change: %s", isMaster ? "master": "slave");
+}
 
 /* release all the memory used in timer structure */
 void DeleteTimerData(TimerData *td) {
@@ -50,9 +57,11 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
 
     td = (TimerData*)data;
 
-    /* execute the script */
-    rep = RedisModule_Call(ctx, "EVALSHA", "sls", td->sha1, 0L, td->data);
-    RedisModule_FreeCallReply(rep);
+    /* if master, execute the script */
+    if (isMaster) {
+        rep = RedisModule_Call(ctx, "EVALSHA", "sls", td->sha1, 0L, td->data);
+        RedisModule_FreeCallReply(rep);
+    }
 
     /* if loop, create a new timer and reinsert
      * if not, delete the timer data
@@ -170,6 +179,14 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     if (RedisModule_CreateCommand(ctx, "timer.kill", TimerKillCommand, "write", 0, 0, 0) == REDISMODULE_ERR) {
         return REDISMODULE_ERR;
     }
+    
+    RedisModule_SubscribeToServerEvent(ctx,
+            RedisModuleEvent_ReplicationRoleChanged, roleChangeCallback);
+    RedisModuleServerInfoData *info = RedisModule_GetServerInfo(ctx, "replication");
+    const char *role = RedisModule_ServerInfoGetFieldC(info, "role");
+    isMaster = strcasecmp(role, "master") == 0;
+    RedisModule_Log(ctx, "notice", "role: %s", isMaster ? "master": "slave");
+    RedisModule_FreeServerInfo(ctx, info);
     
     /* initialize map */
     timers = RedisModule_CreateDict(NULL);

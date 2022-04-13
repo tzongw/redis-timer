@@ -38,6 +38,8 @@ static bool isMaster = true;
 
 void roleChangeCallback(RedisModuleCtx *ctx, RedisModuleEvent e, uint64_t sub, void *data)
 {
+    REDISMODULE_NOT_USED(e);
+    REDISMODULE_NOT_USED(data);
     isMaster = (sub == REDISMODULE_EVENT_REPLROLECHANGED_NOW_MASTER);
     RedisModule_Log(ctx, "notice", "role change: %s", isMaster ? "master": "slave");
 }

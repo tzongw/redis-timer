@@ -136,6 +136,7 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_DictSet(timers, td->key, td);
     
     RedisModule_ReplyWithLongLong(ctx, added);
+    RedisModule_ReplicateVerbatim(ctx);
     return REDISMODULE_OK;
 }
 
@@ -161,6 +162,7 @@ int TimerKillCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         }
     }
     RedisModule_ReplyWithLongLong(ctx, deleted);
+    RedisModule_ReplicateVerbatim(ctx);
     return REDISMODULE_OK;
 }
 

@@ -114,9 +114,12 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
     /* allocate structure and init */
     td = (TimerData*)RedisModule_Alloc(sizeof(*td));
-    td->key = RedisModule_CreateStringFromString(NULL, key);
-    td->data = RedisModule_CreateStringFromString(NULL, data);
-    td->sha1 = RedisModule_CreateStringFromString(NULL, sha1);
+    RedisModule_RetainString(NULL, key);
+    td->key = key;
+    RedisModule_RetainString(NULL, data);
+    td->data = data;
+    RedisModule_RetainString(NULL, sha1);
+    td->sha1 = sha1;
     td->interval = interval;
     td->loop = loop;
 

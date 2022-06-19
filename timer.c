@@ -98,15 +98,14 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     int datalen;
     TimerData *td = NULL;
     const char *s;
-    RedisModuleString *key, *data, *sha1;
+    RedisModuleString *key, *sha1;
 
     if (argc < 5) {
         return RedisModule_WrongArity(ctx);
     }
     key = argv[1];
-    data = argv[2];
-    sha1 = argv[3];
-    if (RedisModule_StringToLongLong(argv[4], &interval) != REDISMODULE_OK) {
+    sha1 = argv[2];
+    if (RedisModule_StringToLongLong(argv[3], &interval) != REDISMODULE_OK) {
         return RedisModule_ReplyWithError(ctx, "ERR invalid interval");
     }
 
@@ -120,7 +119,7 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         return RedisModule_ReplyWithError(ctx, "ERR invalid numkeys");
     }
     pos++;
-    datalen = argv - pos;
+    datalen = argc - pos;
     if (datalen < numkeys || datalen > MAX_DATA_LEN) {
         return RedisModule_WrongArity(ctx);
     }

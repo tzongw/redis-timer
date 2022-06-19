@@ -12,7 +12,7 @@
 #define REDISMODULE_EXPERIMENTAL_API
 #include "redismodule.h"
 
-#define MAX_DATA_LEN 4
+#define MAX_DATA_LEN 8
 
 /* structure with timer information */
 typedef struct TimerData {
@@ -37,6 +37,7 @@ static const char ping[] = "PING\r\n";
 static char pong[1024];
 static const ssize_t pingSize = sizeof(ping)-1; // exclude '\0'
 static ssize_t pingOffset = 0;
+static char fmt[2+MAX_DATA_LEN+1] = "slssssssss";
  
 
 /* release all the memory used in timer structure */
@@ -54,8 +55,12 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
     td = (TimerData*)data;
 
     /* execute the script */
-    rep = RedisModule_Call(ctx, "EVALSHA", "sls", td->sha1, 0L, td->data);
+    fmt[2+td->datalen] = '\0';
+    rep = RedisModule_Call(ctx, "EVALSHA", fmt, td->sha1, td->numkeys,
+                           td->data[0], td->data[1] td->data[2], td->data[3],
+                           td->data[4], td->data[5] td->data[6], td->data[7]);
     RedisModule_FreeCallReply(rep);
+    fmt[2+td->datalen] = 's';
 
     /* if loop, create a new timer and reinsert
      * if not, delete the timer data

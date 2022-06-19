@@ -44,6 +44,9 @@ static char fmt[2+MAX_DATA_LEN+1] = "slssssssss";
 void DeleteTimerData(TimerData *td) {
     RedisModule_FreeString(NULL, td->key);
     RedisModule_FreeString(NULL, td->sha1);
+    for (int i = 0; i < td->datalen; i++) {
+        RedisModule_FreeString(NULL, td->data[i]);
+    }
     RedisModule_Free(td);
 }
 

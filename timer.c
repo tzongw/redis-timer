@@ -115,6 +115,9 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         loop = true;
         pos++;
     }
+    if (pos >= argc) {
+        return RedisModule_WrongArity(ctx);
+    }
     if (RedisModule_StringToLongLong(argv[pos], &numkeys) != REDISMODULE_OK || numkeys < 0) {
         return RedisModule_ReplyWithError(ctx, "ERR invalid numkeys");
     }

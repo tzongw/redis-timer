@@ -17,7 +17,7 @@
 /* structure with timer information */
 typedef struct TimerData {
     RedisModuleString *key;        /* user timer id */
-    RedisModuleString *sha1;    /* sha1 for the script to execute */
+    RedisModuleString *function;    /* function for the script to execute */
     RedisModuleString *data[MAX_DATA_LEN];
     int datalen;
     long long numkeys;
@@ -43,7 +43,7 @@ static char fmt[2+MAX_DATA_LEN+1] = "slssssssss";
 /* release all the memory used in timer structure */
 void DeleteTimerData(TimerData *td) {
     RedisModule_FreeString(NULL, td->key);
-    RedisModule_FreeString(NULL, td->sha1);
+    RedisModule_FreeString(NULL, td->function);
     for (int i = 0; i < td->datalen; i++) {
         RedisModule_FreeString(NULL, td->data[i]);
     }
@@ -59,7 +59,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
 
     /* execute the script */
     fmt[2+td->datalen] = '\0';
-    rep = RedisModule_Call(ctx, "EVALSHA", fmt, td->sha1, td->numkeys,
+    rep = RedisModule_Call(ctx, "FCALL", fmt, td->function, td->numkeys,
                            td->data[0], td->data[1], td->data[2], td->data[3],
                            td->data[4], td->data[5], td->data[6], td->data[7]);
     RedisModule_FreeCallReply(rep);
@@ -86,7 +86,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
 
 /* Entrypoint for TIMER.NEW command.
  * This command creates a new timer.
- * Syntax: TIMER.NEW key sha1 interval [LOOP] numkeys [key [key ...]] [arg [arg ...]]
+ * Syntax: TIMER.NEW key function interval [LOOP] numkeys [key [key ...]] [arg [arg ...]]
  * If LOOP is specified, after executing a new timer is created
  */
 int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
@@ -98,13 +98,13 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     int datalen;
     TimerData *td = NULL;
     const char *s;
-    RedisModuleString *key, *sha1;
+    RedisModuleString *key, *function;
 
     if (argc < 5) {
         return RedisModule_WrongArity(ctx);
     }
     key = argv[1];
-    sha1 = argv[2];
+    function = argv[2];
     if (RedisModule_StringToLongLong(argv[3], &interval) != REDISMODULE_OK) {
         return RedisModule_ReplyWithError(ctx, "ERR invalid interval");
     }
@@ -138,8 +138,8 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     td = (TimerData*)RedisModule_Alloc(sizeof(*td));
     RedisModule_RetainString(NULL, key);
     td->key = key;
-    RedisModule_RetainString(NULL, sha1);
-    td->sha1 = sha1;
+    RedisModule_RetainString(NULL, function);
+    td->function = function;
     td->interval = interval;
     td->loop = loop;
     

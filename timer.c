@@ -60,8 +60,8 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
     /* execute the script */
     fmt[2+td->datalen] = '\0';
     rep = RedisModule_Call(ctx, "EVALSHA", fmt, td->sha1, td->numkeys,
-                           td->data[0], td->data[1] td->data[2], td->data[3],
-                           td->data[4], td->data[5] td->data[6], td->data[7]);
+                           td->data[0], td->data[1], td->data[2], td->data[3],
+                           td->data[4], td->data[5], td->data[6], td->data[7]);
     RedisModule_FreeCallReply(rep);
     fmt[2+td->datalen] = 's';
 

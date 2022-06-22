@@ -13,17 +13,17 @@
 #include "redismodule.h"
 
 #define MAX_DATA_LEN 8
-#define MAX_DATABASES 16
 
 /* structure with timer information */
 typedef struct TimerData {
     RedisModuleString *key;        /* user timer id */
     RedisModuleString *function;    /* function for the script to execute */
     RedisModuleString *data[MAX_DATA_LEN];
-    int datalen;
+    long long datalen;
     long long numkeys;
     mstime_t interval;          /* interval */
     bool loop;                   /* loop timer */
+    bool deleted;              /* timer been deleted */
     RedisModuleTimerID tid;     /* internal id for the timer API */
 } TimerData;
 
@@ -31,14 +31,13 @@ typedef struct TimerData {
 void TimerCallback(RedisModuleCtx *ctx, void *data);
 void DeleteTimerData(TimerData *td);
 
-/* internal structure for storing timers */
-static RedisModuleDict *timers[MAX_DATABASES];
 static int serv = -1;  /* used to wake up redis(fixed at 6.0) */
 static const char ping[] = "PING\r\n";
 static char pong[1024];
 static const ssize_t pingSize = sizeof(ping)-1; // exclude '\0'
 static ssize_t pingOffset = 0;
 static char fmt[2+MAX_DATA_LEN+1] = "slssssssss";
+static RedisModuleType *moduleType;
  
 
 /* release all the memory used in timer structure */
@@ -57,7 +56,10 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
     TimerData *td;
 
     td = (TimerData*)data;
-    int db = RedisModule_GetSelectedDb(ctx);
+    if (td->deleted) { /* already deleted, clear it */
+        DeleteTimerData(td);
+        return;
+    }
 
     /* execute the script */
     fmt[2+td->datalen] = '\0';
@@ -73,7 +75,9 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
     if (td->loop) {
         td->tid = RedisModule_CreateTimer(ctx, td->interval, TimerCallback, td);
     } else {
-        RedisModule_DictDel(timers[db], td->key, NULL);
+        RedisModuleKey *mk = RedisModule_OpenKey(ctx, td->key, REDISMODULE_WRITE);
+        RedisModule_DeleteKey(mk);
+        RedisModule_CloseKey(mk);
         DeleteTimerData(td);
     }
     if (serv != -1) {
@@ -101,11 +105,6 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     TimerData *td = NULL;
     const char *s;
     RedisModuleString *key, *function;
-    int db = RedisModule_GetSelectedDb(ctx);
-
-    if (db >= MAX_DATABASES) {
-        return RedisModule_ReplyWithError(ctx, "ERR DB index is out of range");
-    }
 
     if (argc < 5) {
         return RedisModule_WrongArity(ctx);
@@ -134,13 +133,6 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         return RedisModule_WrongArity(ctx);
     }
     
-    if (RedisModule_DictDel(timers[db], key, &td) == REDISMODULE_OK) {
-        RedisModule_StopTimer(ctx, td->tid, NULL);
-        DeleteTimerData(td);
-        td = NULL;
-        added = 0;
-    }
-
     /* allocate structure and init */
     td = (TimerData*)RedisModule_Alloc(sizeof(*td));
     RedisModule_RetainString(NULL, key);
@@ -159,42 +151,74 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
     /* create the timer through the Timer API */
     td->tid = RedisModule_CreateTimer(ctx, interval, TimerCallback, td);
-
-    /* add the timer to the list of timers */
-    RedisModule_DictSet(timers[db], td->key, td);
+    td->deleted = false;
+    
+    RedisModuleKey *mk = RedisModule_OpenKey(ctx, key, REDISMODULE_WRITE);
+    if (RedisModule_ModuleTypeGetType(mk) == moduleType) {
+        added = 0; // replace old timer
+    }
+    RedisModule_ModuleTypeSetValue(mk, moduleType, td);
+    RedisModule_CloseKey(mk);
     
     RedisModule_ReplyWithLongLong(ctx, added);
     return REDISMODULE_OK;
 }
 
-/* Entrypoint for TIMER.KILL command.
- * This command terminates existing timers.
- * Syntax: TIMER.KILL key [key ...]
- */
-int TimerKillCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
-    TimerData *td;
-    long long deleted = 0;
-    int db = RedisModule_GetSelectedDb(ctx);
-
-    if (db >= MAX_DATABASES) {
-        return RedisModule_ReplyWithError(ctx, "ERR DB index is out of range");
+void *timer_RDBLoadCallBack(RedisModuleIO *io, int encver) {
+    TimerData *td = (TimerData*)RedisModule_Alloc(sizeof(*td));
+    td->key = RedisModule_LoadString(io);
+    td->function = RedisModule_LoadString(io);
+    td->datalen = RedisModule_LoadSigned(io);
+    for (int i = 0; i < td->datalen; i++) {
+        td->data[i] = RedisModule_LoadString(io);
     }
+    td->numkeys = RedisModule_LoadSigned(io);
+    td->interval = RedisModule_LoadSigned(io);
+    td->loop = RedisModule_LoadSigned(io) == 1;
+    td->deleted = false;
+    td->tid = RedisModule_CreateTimer(RedisModule_GetContextFromIO(io), td->interval, TimerCallback, td);
+    return td;
+}
 
-    /* check arguments */
-    if (argc <= 1) {
-        return RedisModule_WrongArity(ctx);
+void timer_RDBSaveCallBack(RedisModuleIO *io, void *value) {
+    TimerData *td = value;
+    RedisModule_SaveString(io, td->key);
+    RedisModule_SaveString(io, td->function);
+    RedisModule_SaveSigned(io, td->datalen);
+    for (int i = 0; i < td->datalen; i++) {
+        RedisModule_SaveString(io, td->data[i]);
     }
+    RedisModule_SaveSigned(io, td->numkeys);
+    uint64_t remaining = td->interval;
+    if (!td->loop) {
+        RedisModule_GetTimerInfo(RedisModule_GetContextFromIO(io), td->tid, &remaining, NULL);
+    }
+    RedisModule_SaveSigned(io, remaining);
+    RedisModule_SaveSigned(io, td->loop ? 1 : 0);
+}
 
-    for (int i = 1; i < argc; i++) {
-        if (RedisModule_DictDel(timers[db], argv[1], &td) == REDISMODULE_OK) {
-            /* stop timer and free*/
-            RedisModule_StopTimer(ctx, td->tid, NULL);
-            DeleteTimerData(td);
-            deleted++;
-        }
+void timer_AOFRewriteCallBack(RedisModuleIO *io, RedisModuleString *key, void *value) {
+    TimerData *td = value;
+    if (td->loop) {
+        char fmt[5+MAX_DATA_LEN+1] = "sslclssssssss";
+        fmt[5+td->numkeys] = '\0';
+        RedisModule_EmitAOF(io, "timer.new", fmt, td->key, td->function, td->interval, "LOOP", td->numkeys,
+                            td->data[0], td->data[1], td->data[2], td->data[3],
+                            td->data[4], td->data[5], td->data[6], td->data[7]);
+    } else {
+        char fmt[4+MAX_DATA_LEN+1] = "ssllssssssss";
+        fmt[4+td->numkeys] = '\0';
+        uint64_t remaining = td->interval;
+        RedisModule_GetTimerInfo(RedisModule_GetContextFromIO(io), td->tid, &remaining, NULL);
+        RedisModule_EmitAOF(io, "timer.new", fmt, td->key, td->function, remaining, td->numkeys,
+                            td->data[0], td->data[1], td->data[2], td->data[3],
+                            td->data[4], td->data[5], td->data[6], td->data[7]);
     }
-    RedisModule_ReplyWithLongLong(ctx, deleted);
-    return REDISMODULE_OK;
+}
+
+void timer_FreeCallBack(void *value) {
+    TimerData *td = (TimerData *)value;
+    td->deleted = true; /* we don't have ctx to call StopTimer, so mark it as deleted, will clear it in TimerCallback, sigh */
 }
 
 /* Module entrypoint */
@@ -205,17 +229,20 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     }
 
     /* register commands */
-    if (RedisModule_CreateCommand(ctx, "timer.new", TimerNewCommand, "write deny-oom", 0, 0, 0) == REDISMODULE_ERR) {
-        return REDISMODULE_ERR;
-    }
-
-    if (RedisModule_CreateCommand(ctx, "timer.kill", TimerKillCommand, "write", 0, 0, 0) == REDISMODULE_ERR) {
+    if (RedisModule_CreateCommand(ctx, "timer.new", TimerNewCommand, "write deny-oom", 1, 1, 1) == REDISMODULE_ERR) {
         return REDISMODULE_ERR;
     }
     
-    /* initialize map */
-    for (int db = 0; db < MAX_DATABASES; db++) {
-        timers[db] = RedisModule_CreateDict(NULL);
+    RedisModuleTypeMethods tm = {
+        .version = REDISMODULE_TYPE_METHOD_VERSION,
+        .rdb_load = timer_RDBLoadCallBack,
+        .rdb_save = timer_RDBSaveCallBack,
+        .aof_rewrite = timer_AOFRewriteCallBack,
+        .free = timer_FreeCallBack,
+    };
+    moduleType = RedisModule_CreateDataType(ctx, "timer-tzw", 0, &tm);
+    if (moduleType == NULL) {
+        return REDISMODULE_ERR;
     }
     
     if (argc <= 0) return REDISMODULE_OK;
@@ -240,16 +267,5 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 }
 
 int RedisModule_OnUnload(RedisModuleCtx *ctx) {
-    TimerData *td = NULL;
-    for (int db = 0; db < MAX_DATABASES; db++) {
-        RedisModuleDictIter *di = RedisModule_DictIteratorStartC(timers[db], "^", NULL, 0);
-        while (RedisModule_DictNextC(di, NULL, (void**)&td)) {
-            RedisModule_StopTimer(ctx, td->tid, NULL);
-            DeleteTimerData(td);
-        }
-        RedisModule_DictIteratorStop(di);
-        RedisModule_FreeDict(NULL, timers[db]);
-    }
-    if (serv != -1) close(serv);
-    return REDISMODULE_OK;
+    return REDISMODULE_ERR;
 }

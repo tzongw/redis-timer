@@ -39,6 +39,16 @@ static ssize_t pingOffset = 0;
 static char fmt[2+MAX_DATA_LEN+1] = "slssssssss";
 static RedisModuleType *moduleType;
  
+static bool isMaster = true;
+
+
+void roleChangeCallback(RedisModuleCtx *ctx, RedisModuleEvent e, uint64_t sub, void *data)
+{
+    REDISMODULE_NOT_USED(e);
+    REDISMODULE_NOT_USED(data);
+    isMaster = (sub == REDISMODULE_EVENT_REPLROLECHANGED_NOW_MASTER);
+    RedisModule_Log(ctx, "notice", "role change: %s", isMaster ? "master": "slave");
+}
 
 /* release all the memory used in timer structure */
 void DeleteTimerData(TimerData *td) {
@@ -61,13 +71,15 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         return;
     }
 
-    /* execute the script */
-    fmt[2+td->datalen] = '\0';
-    rep = RedisModule_Call(ctx, "FCALL", fmt, td->function, td->numkeys,
-                           td->data[0], td->data[1], td->data[2], td->data[3],
-                           td->data[4], td->data[5], td->data[6], td->data[7]);
-    RedisModule_FreeCallReply(rep);
-    fmt[2+td->datalen] = 's';
+    /* if master, execute the script */
+    if (isMaster) {
+        fmt[2+td->datalen] = '\0';
+        rep = RedisModule_Call(ctx, "FCALL", fmt, td->function, td->numkeys,
+                                td->data[0], td->data[1], td->data[2], td->data[3],
+                                td->data[4], td->data[5], td->data[6], td->data[7]);
+        RedisModule_FreeCallReply(rep);
+        fmt[2+td->datalen] = 's';
+    }
 
     /* if loop, create a new timer and reinsert
      * if not, delete the timer data
@@ -246,6 +258,14 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     if (moduleType == NULL) {
         return REDISMODULE_ERR;
     }
+    
+    RedisModule_SubscribeToServerEvent(ctx,
+            RedisModuleEvent_ReplicationRoleChanged, roleChangeCallback);
+    RedisModuleServerInfoData *info = RedisModule_GetServerInfo(ctx, "replication");
+    const char *role = RedisModule_ServerInfoGetFieldC(info, "role");
+    isMaster = strcasecmp(role, "master") == 0;
+    RedisModule_Log(ctx, "notice", "role: %s", isMaster ? "master": "slave");
+    RedisModule_FreeServerInfo(ctx, info);
     
     if (argc <= 0) return REDISMODULE_OK;
     

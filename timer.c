@@ -108,12 +108,12 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
 int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_AutoMemory(ctx);
     long long interval;
-    long long added = 1; /* new or replace */
     long long numkeys;
     bool loop = false;
     int pos;
     int datalen;
     TimerData *td = NULL;
+    TimerData *old = NULL;
     const char *s;
     RedisModuleString *key, *function;
 
@@ -166,13 +166,17 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     
     RedisModuleKey *mk = RedisModule_OpenKey(ctx, key, REDISMODULE_WRITE);
     if (RedisModule_ModuleTypeGetType(mk) == moduleType) {
-        added = 0; // replace old timer
+        old = RedisModule_ModuleTypeGetValue(mk);  // replace timer
     }
     RedisModule_ModuleTypeSetValue(mk, moduleType, td);
     RedisModule_CloseKey(mk);
+    if (old) {
+        RedisModule_StopTimer(ctx, old->tid, NULL);
+        DeleteTimerData(ctx, old);
+    }
     RedisModule_ReplicateVerbatim(ctx);
     
-    RedisModule_ReplyWithLongLong(ctx, added);
+    RedisModule_ReplyWithLongLong(ctx, old ? 0 : 1);
     return REDISMODULE_OK;
 }
 

@@ -183,7 +183,7 @@ int TimerInfoCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     TimerData *td = RedisModule_ModuleTypeGetValue(mk);
     uint64_t remaining = td->interval;
     RedisModule_GetTimerInfo(ctx, td->tid, &remaining, NULL);
-    RedisModule_ReplyWithMap(ctx, 4);
+    RedisModule_ReplyWithMap(ctx, 4+td->datalen);
     RedisModule_ReplyWithCString(ctx, "function");
     RedisModule_ReplyWithString(ctx, td->function);
     RedisModule_ReplyWithCString(ctx, "interval");
@@ -192,6 +192,14 @@ int TimerInfoCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_ReplyWithLongLong(ctx, remaining);
     RedisModule_ReplyWithCString(ctx, "loop");
     RedisModule_ReplyWithBool(ctx, td->loop);
+    for (int i = 0; i < td->datalen; i++) {
+        static char keys[] = "key*";
+        static char args[] = "arg*";
+        char *name = i < td->numkeys ? keys : args;
+        name[3] = "123456789"[i<td->numkeys ? i : i-td->numkeys];
+        RedisModule_ReplyWithCString(ctx, name);
+        RedisModule_ReplyWithString(ctx, td->data[i]);
+    }
     return REDISMODULE_OK;
 }
 

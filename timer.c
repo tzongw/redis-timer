@@ -167,6 +167,27 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     return REDISMODULE_OK;
 }
 
+int TimerKillCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    RedisModule_AutoMemory(ctx);
+    if (argc != 2) {
+        return RedisModule_WrongArity(ctx);
+    }
+    if (!RedisModule_KeyExists(ctx, argv[1])) {
+        return RedisModule_ReplyWithLongLong(ctx, 0);
+    }
+
+    RedisModuleKey *mk = RedisModule_OpenKey(ctx, argv[1], REDISMODULE_WRITE); /* auto closed */
+    if (RedisModule_ModuleTypeGetType(mk) != moduleType) {
+        return RedisModule_ReplyWithError(ctx, "ERR wrong type");
+    }
+    TimerData *td = RedisModule_ModuleTypeGetValue(mk);
+
+    RedisModule_DeleteKey(mk);
+    RedisModule_StopTimer(ctx, td->tid, NULL);
+    DeleteTimerData(ctx, td);
+    return RedisModule_ReplyWithLongLong(ctx, 1);
+}
+
 int TimerInfoCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_AutoMemory(ctx);
     if (argc != 2) {
@@ -279,6 +300,10 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     RedisModule_AutoMemory(ctx);
     /* register commands */
     if (RedisModule_CreateCommand(ctx, "timer.new", TimerNewCommand, "write deny-oom", 1, 1, 1) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    if (RedisModule_CreateCommand(ctx, "timer.kill", TimerKillCommand, "write", 1, 1, 1) == REDISMODULE_ERR) {
         return REDISMODULE_ERR;
     }
 

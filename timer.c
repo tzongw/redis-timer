@@ -167,6 +167,34 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     return REDISMODULE_OK;
 }
 
+int TimerInfoCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    RedisModule_AutoMemory(ctx);
+    if (argc != 2) {
+        return RedisModule_WrongArity(ctx);
+    }
+    RedisModuleKey *mk = RedisModule_OpenKey(ctx, argv[1], REDISMODULE_READ); /* auto closed */
+    if (RedisModule_ModuleTypeGetType(mk) != moduleType) {
+        if (mk) {
+            return RedisModule_ReplyWithError(ctx, "ERR wrong type");
+        } else {
+            return RedisModule_ReplyWithNull(ctx);
+        }
+    }
+    TimerData *td = RedisModule_ModuleTypeGetValue(mk);
+    uint64_t remaining = td->interval;
+    RedisModule_GetTimerInfo(ctx, td->tid, &remaining, NULL);
+    RedisModule_ReplyWithMap(ctx, 4);
+    RedisModule_ReplyWithCString(ctx, "function");
+    RedisModule_ReplyWithString(ctx, td->function);
+    RedisModule_ReplyWithCString(ctx, "interval");
+    RedisModule_ReplyWithLongLong(ctx, td->interval);
+    RedisModule_ReplyWithCString(ctx, "remaining");
+    RedisModule_ReplyWithLongLong(ctx, remaining);
+    RedisModule_ReplyWithCString(ctx, "loop");
+    RedisModule_ReplyWithBool(ctx, td->loop);
+    return REDISMODULE_OK;
+}
+
 void *timer_RDBLoadCallBack(RedisModuleIO *io, int encver) {
     REDISMODULE_NOT_USED(encver);
     RedisModuleCtx *ctx = RedisModule_GetContextFromIO(io);
@@ -243,6 +271,10 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     RedisModule_AutoMemory(ctx);
     /* register commands */
     if (RedisModule_CreateCommand(ctx, "timer.new", TimerNewCommand, "write deny-oom", 1, 1, 1) == REDISMODULE_ERR) {
+        return REDISMODULE_ERR;
+    }
+
+    if (RedisModule_CreateCommand(ctx, "timer.info", TimerInfoCommand, "readonly fast", 1, 1, 1) == REDISMODULE_ERR) {
         return REDISMODULE_ERR;
     }
     

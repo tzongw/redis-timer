@@ -62,6 +62,7 @@ void DeleteTimerData(TimerData *td) {
 
 /* callback called by the Timer API. Data contains a TimerData structure */
 void TimerCallback(RedisModuleCtx *ctx, void *data) {
+    RedisModule_AutoMemory(ctx);
     RedisModuleCallReply *rep;
     TimerData *td;
 
@@ -109,6 +110,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
  * If LOOP is specified, after executing a new timer is created
  */
 int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    RedisModule_AutoMemory(ctx);
     long long interval;
     long long added = 1; /* new or replace */
     long long numkeys;
@@ -148,15 +150,15 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     
     /* allocate structure and init */
     td = (TimerData*)RedisModule_Alloc(sizeof(*td));
-    RedisModule_RetainString(NULL, key);
+    RedisModule_RetainString(ctx, key);
     td->key = key;
-    RedisModule_RetainString(NULL, function);
+    RedisModule_RetainString(ctx, function);
     td->function = function;
     td->interval = interval;
     td->loop = loop;
     
     for (int i = 0; i < datalen; i++) {
-        RedisModule_RetainString(NULL, argv[pos+i]);
+        RedisModule_RetainString(ctx, argv[pos+i]);
         td->data[i] = argv[pos+i];
     }
     td->datalen = datalen;
@@ -179,6 +181,8 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 }
 
 void *timer_RDBLoadCallBack(RedisModuleIO *io, int encver) {
+    RedisModuleCtx *ctx = RedisModule_GetContextFromIO(io);
+    RedisModule_AutoMemory(ctx);
     TimerData *td = (TimerData*)RedisModule_Alloc(sizeof(*td));
     td->key = RedisModule_LoadString(io);
     td->function = RedisModule_LoadString(io);
@@ -190,11 +194,13 @@ void *timer_RDBLoadCallBack(RedisModuleIO *io, int encver) {
     td->interval = RedisModule_LoadSigned(io);
     td->loop = RedisModule_LoadSigned(io) == 1;
     td->deleted = false;
-    td->tid = RedisModule_CreateTimer(RedisModule_GetContextFromIO(io), td->interval, TimerCallback, td);
+    td->tid = RedisModule_CreateTimer(ctx, td->interval, TimerCallback, td);
     return td;
 }
 
 void timer_RDBSaveCallBack(RedisModuleIO *io, void *value) {
+    RedisModuleCtx *ctx = RedisModule_GetContextFromIO(io);
+    RedisModule_AutoMemory(ctx);
     TimerData *td = value;
     RedisModule_SaveString(io, td->key);
     RedisModule_SaveString(io, td->function);
@@ -205,13 +211,15 @@ void timer_RDBSaveCallBack(RedisModuleIO *io, void *value) {
     RedisModule_SaveSigned(io, td->numkeys);
     uint64_t remaining = td->interval;
     if (!td->loop) {
-        RedisModule_GetTimerInfo(RedisModule_GetContextFromIO(io), td->tid, &remaining, NULL);
+        RedisModule_GetTimerInfo(ctx, td->tid, &remaining, NULL);
     }
     RedisModule_SaveSigned(io, remaining);
     RedisModule_SaveSigned(io, td->loop ? 1 : 0);
 }
 
 void timer_AOFRewriteCallBack(RedisModuleIO *io, RedisModuleString *key, void *value) {
+    RedisModuleCtx *ctx = RedisModule_GetContextFromIO(io);
+    RedisModule_AutoMemory(ctx);
     TimerData *td = value;
     if (td->loop) {
         char fmt[5+MAX_DATA_LEN+1] = "sslclssssssss";
@@ -223,7 +231,7 @@ void timer_AOFRewriteCallBack(RedisModuleIO *io, RedisModuleString *key, void *v
         char fmt[4+MAX_DATA_LEN+1] = "ssllssssssss";
         fmt[4+td->datalen] = '\0';
         uint64_t remaining = td->interval;
-        RedisModule_GetTimerInfo(RedisModule_GetContextFromIO(io), td->tid, &remaining, NULL);
+        RedisModule_GetTimerInfo(ctx, td->tid, &remaining, NULL);
         RedisModule_EmitAOF(io, "timer.new", fmt, td->key, td->function, remaining, td->numkeys,
                             td->data[0], td->data[1], td->data[2], td->data[3],
                             td->data[4], td->data[5], td->data[6], td->data[7]);
@@ -237,6 +245,7 @@ void timer_FreeCallBack(void *value) {
 
 /* Module entrypoint */
 int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    RedisModule_AutoMemory(ctx);
     /* Register the module itself */
     if (RedisModule_Init(ctx, "timer", 1, REDISMODULE_APIVER_1) == REDISMODULE_ERR) {
         return REDISMODULE_ERR;
@@ -289,5 +298,6 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 }
 
 int RedisModule_OnUnload(RedisModuleCtx *ctx) {
+    RedisModule_AutoMemory(ctx);
     return REDISMODULE_ERR;
 }

@@ -78,6 +78,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         RedisModuleKey *mk = RedisModule_OpenKey(ctx, td->key, REDISMODULE_WRITE);
         RedisModule_DeleteKey(mk);
         RedisModule_CloseKey(mk);
+        RedisModule_Replicate(ctx, "DEL", "s", td->key);
         DeleteTimerData(td);
     }
     if (serv != -1) {
@@ -159,6 +160,7 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     }
     RedisModule_ModuleTypeSetValue(mk, moduleType, td);
     RedisModule_CloseKey(mk);
+    RedisModule_ReplicateVerbatim(ctx);
     
     RedisModule_ReplyWithLongLong(ctx, added);
     return REDISMODULE_OK;
@@ -201,13 +203,13 @@ void timer_AOFRewriteCallBack(RedisModuleIO *io, RedisModuleString *key, void *v
     TimerData *td = value;
     if (td->loop) {
         char fmt[5+MAX_DATA_LEN+1] = "sslclssssssss";
-        fmt[5+td->numkeys] = '\0';
+        fmt[5+td->datalen] = '\0';
         RedisModule_EmitAOF(io, "timer.new", fmt, td->key, td->function, td->interval, "LOOP", td->numkeys,
                             td->data[0], td->data[1], td->data[2], td->data[3],
                             td->data[4], td->data[5], td->data[6], td->data[7]);
     } else {
         char fmt[4+MAX_DATA_LEN+1] = "ssllssssssss";
-        fmt[4+td->numkeys] = '\0';
+        fmt[4+td->datalen] = '\0';
         uint64_t remaining = td->interval;
         RedisModule_GetTimerInfo(RedisModule_GetContextFromIO(io), td->tid, &remaining, NULL);
         RedisModule_EmitAOF(io, "timer.new", fmt, td->key, td->function, remaining, td->numkeys,

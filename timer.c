@@ -27,11 +27,6 @@ typedef struct TimerData {
     RedisModuleTimerID tid;     /* internal id for the timer API */
 } TimerData;
 
-static int serv = -1;  /* used to wake up redis(fixed at 6.0) */
-static const char ping[] = "PING\r\n";
-static char pong[1024];
-static const ssize_t pingSize = sizeof(ping)-1; // exclude '\0'
-static ssize_t pingOffset = 0;
 static char fmt[2+MAX_DATA_LEN+1] = "slssssssss";
 static RedisModuleType *moduleType;
  
@@ -89,14 +84,6 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         RedisModule_CloseKey(mk);
         RedisModule_Replicate(ctx, "DEL", "s", td->key);
         DeleteTimerData(ctx, td);
-    }
-    if (serv != -1) {
-        ssize_t received = recv(serv, pong, sizeof(pong), 0);
-        REDISMODULE_NOT_USED(received);
-        ssize_t sent = send(serv, ping+pingOffset, pingSize-pingOffset, 0);
-        if (sent > 0) {
-            pingOffset = (pingOffset+sent) % pingSize;
-        }
     }
 }
 
@@ -247,6 +234,8 @@ void timer_FreeCallBack(void *value) {
 
 /* Module entrypoint */
 int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    REDISMODULE_NOT_USED(argv);
+    REDISMODULE_NOT_USED(argc);
     /* Register the module itself */
     if (RedisModule_Init(ctx, "timer", 1, REDISMODULE_APIVER_1) == REDISMODULE_ERR) {
         return REDISMODULE_ERR;
@@ -276,25 +265,6 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     isMaster = strcasecmp(role, "master") == 0;
     RedisModule_Log(ctx, "notice", "role: %s", isMaster ? "master": "slave");
     RedisModule_FreeServerInfo(ctx, info);
-    
-    if (argc <= 0) return REDISMODULE_OK;
-    
-    long long port;
-    if (RedisModule_StringToLongLong(argv[0], &port) != REDISMODULE_OK) {
-        return REDISMODULE_ERR;
-    }
-    serv = socket(AF_INET, SOCK_STREAM, 0);
-    int flags = fcntl(serv, F_GETFL);
-    fcntl(serv, F_SETFL, flags | O_NONBLOCK);
-    int flag = 1;
-    setsockopt(serv, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
-
-    struct sockaddr_in    servaddr;
-    memset(&servaddr, 0, sizeof(servaddr));
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(port);
-    inet_pton(AF_INET, "127.0.0.1", &servaddr.sin_addr);
-    connect(serv, (struct sockaddr*)&servaddr, sizeof(servaddr));
     return REDISMODULE_OK;
 }
 

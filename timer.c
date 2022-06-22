@@ -27,10 +27,6 @@ typedef struct TimerData {
     RedisModuleTimerID tid;     /* internal id for the timer API */
 } TimerData;
 
-
-void TimerCallback(RedisModuleCtx *ctx, void *data);
-void DeleteTimerData(TimerData *td);
-
 static int serv = -1;  /* used to wake up redis(fixed at 6.0) */
 static const char ping[] = "PING\r\n";
 static char pong[1024];
@@ -51,11 +47,11 @@ void roleChangeCallback(RedisModuleCtx *ctx, RedisModuleEvent e, uint64_t sub, v
 }
 
 /* release all the memory used in timer structure */
-void DeleteTimerData(TimerData *td) {
-    RedisModule_FreeString(NULL, td->key);
-    RedisModule_FreeString(NULL, td->function);
+void DeleteTimerData(RedisModuleCtx *ctx, TimerData *td) {
+    RedisModule_FreeString(ctx, td->key);
+    RedisModule_FreeString(ctx, td->function);
     for (int i = 0; i < td->datalen; i++) {
-        RedisModule_FreeString(NULL, td->data[i]);
+        RedisModule_FreeString(ctx, td->data[i]);
     }
     RedisModule_Free(td);
 }
@@ -68,7 +64,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
 
     td = (TimerData*)data;
     if (td->deleted) { /* already deleted, clear it */
-        DeleteTimerData(td);
+        DeleteTimerData(ctx, td);
         return;
     }
 
@@ -92,7 +88,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         RedisModule_DeleteKey(mk);
         RedisModule_CloseKey(mk);
         RedisModule_Replicate(ctx, "DEL", "s", td->key);
-        DeleteTimerData(td);
+        DeleteTimerData(ctx, td);
     }
     if (serv != -1) {
         ssize_t received = recv(serv, pong, sizeof(pong), 0);
@@ -181,6 +177,7 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 }
 
 void *timer_RDBLoadCallBack(RedisModuleIO *io, int encver) {
+    REDISMODULE_NOT_USED(encver);
     RedisModuleCtx *ctx = RedisModule_GetContextFromIO(io);
     RedisModule_AutoMemory(ctx);
     TimerData *td = (TimerData*)RedisModule_Alloc(sizeof(*td));
@@ -218,6 +215,7 @@ void timer_RDBSaveCallBack(RedisModuleIO *io, void *value) {
 }
 
 void timer_AOFRewriteCallBack(RedisModuleIO *io, RedisModuleString *key, void *value) {
+    REDISMODULE_NOT_USED(key);
     RedisModuleCtx *ctx = RedisModule_GetContextFromIO(io);
     RedisModule_AutoMemory(ctx);
     TimerData *td = value;
@@ -245,12 +243,11 @@ void timer_FreeCallBack(void *value) {
 
 /* Module entrypoint */
 int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
-    RedisModule_AutoMemory(ctx);
     /* Register the module itself */
     if (RedisModule_Init(ctx, "timer", 1, REDISMODULE_APIVER_1) == REDISMODULE_ERR) {
         return REDISMODULE_ERR;
     }
-
+    RedisModule_AutoMemory(ctx);
     /* register commands */
     if (RedisModule_CreateCommand(ctx, "timer.new", TimerNewCommand, "write deny-oom", 1, 1, 1) == REDISMODULE_ERR) {
         return REDISMODULE_ERR;

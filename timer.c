@@ -185,6 +185,7 @@ int TimerKillCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_DeleteKey(mk);
     RedisModule_StopTimer(ctx, td->tid, NULL);
     DeleteTimerData(ctx, td);
+    RedisModule_ReplicateVerbatim(ctx);
     return RedisModule_ReplyWithLongLong(ctx, 1);
 }
 

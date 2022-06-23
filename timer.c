@@ -27,7 +27,6 @@ typedef struct TimerData {
     RedisModuleTimerID tid;     /* internal id for the timer API */
 } TimerData;
 
-static char fmt[2+MAX_DATA_LEN+1] = "slssssssss";
 static RedisModuleType *moduleType;
 static long long timers = 0;
 static bool isMaster = true;
@@ -65,12 +64,12 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
     }
     /* if master, execute the script, replica will copy master's actions */
     if (isMaster) {
+        char fmt[2+MAX_DATA_LEN+1] = "slssssssss";
         fmt[2+td->datalen] = '\0';
         rep = RedisModule_Call(ctx, "FCALL", fmt, td->function, td->numkeys,
                                 td->data[0], td->data[1], td->data[2], td->data[3],
                                 td->data[4], td->data[5], td->data[6], td->data[7]);
         RedisModule_FreeCallReply(rep);
-        fmt[2+td->datalen] = 's';
     }
 
     /* if loop, create a new timer and reinsert
@@ -229,8 +228,8 @@ int TimerInfoCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_ReplyWithCString(ctx, "loop");
     RedisModule_ReplyWithBool(ctx, td->loop);
     for (int i = 0; i < td->datalen; i++) {
-        static char keys[] = "key*";
-        static char args[] = "arg*";
+        char keys[] = "key*";
+        char args[] = "arg*";
         char *name = i < td->numkeys ? keys : args;
         name[3] = "123456789"[i<td->numkeys ? i : i-td->numkeys];
         RedisModule_ReplyWithCString(ctx, name);

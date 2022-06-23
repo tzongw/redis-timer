@@ -29,7 +29,7 @@ typedef struct TimerData {
 
 static char fmt[2+MAX_DATA_LEN+1] = "slssssssss";
 static RedisModuleType *moduleType;
- 
+static long long timers = 0;
 static bool isMaster = true;
 
 
@@ -49,6 +49,7 @@ void DeleteTimerData(RedisModuleCtx *ctx, TimerData *td) {
         RedisModule_FreeString(ctx, td->data[i]);
     }
     RedisModule_Free(td);
+    timers--;
 }
 
 /* callback called by the Timer API. Data contains a TimerData structure */
@@ -136,6 +137,7 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     
     /* allocate structure and init */
     td = (TimerData*)RedisModule_Alloc(sizeof(*td));
+    timers++;
     RedisModule_RetainString(ctx, key);
     td->key = key;
     RedisModule_RetainString(ctx, function);
@@ -242,6 +244,7 @@ void *timer_RDBLoadCallBack(RedisModuleIO *io, int encver) {
     RedisModuleCtx *ctx = RedisModule_GetContextFromIO(io);
     RedisModule_AutoMemory(ctx);
     TimerData *td = (TimerData*)RedisModule_Alloc(sizeof(*td));
+    timers++;
     td->key = RedisModule_LoadString(io);
     td->function = RedisModule_LoadString(io);
     td->datalen = RedisModule_LoadSigned(io);
@@ -348,5 +351,6 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
 
 int RedisModule_OnUnload(RedisModuleCtx *ctx) {
     RedisModule_AutoMemory(ctx);
-    return REDISMODULE_ERR;
+    // can't unload if have running timers
+    return timers>0 ? REDISMODULE_ERR : REDISMODULE_OK;
 }

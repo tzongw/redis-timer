@@ -16,14 +16,14 @@
 
 /* structure with timer information */
 typedef struct TimerData {
-    RedisModuleString *key;        /* user timer id */
-    RedisModuleString *function;    /* function for the script to execute */
-    RedisModuleString *data[MAX_DATA_LEN];
-    long long datalen;
-    long long numkeys;
+    RedisModuleString *key;        /* timer key */
+    RedisModuleString *function;    /* function for the timer to execute */
+    RedisModuleString *data[MAX_DATA_LEN];  /* function keys & args */
+    long long datalen;   /* data length */
+    long long numkeys;     /* function numkeys */
     mstime_t interval;          /* interval */
     bool loop;                   /* loop timer */
-    bool deleted;              /* timer been deleted */
+    bool deleted;              /* timer key been deleted from db */
     RedisModuleTimerID tid;     /* internal id for the timer API */
 } TimerData;
 
@@ -58,12 +58,11 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
     TimerData *td;
 
     td = (TimerData*)data;
-    if (td->deleted) { /* already deleted, clear it */
+    if (td->deleted) { /* already deleted from db, clear it */
         DeleteTimerData(ctx, td);
         return;
     }
-
-    /* if master, execute the script */
+    /* if master, execute the script, replica will copy master's actions */
     if (isMaster) {
         fmt[2+td->datalen] = '\0';
         rep = RedisModule_Call(ctx, "FCALL", fmt, td->function, td->numkeys,
@@ -79,10 +78,13 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
     if (td->loop) {
         td->tid = RedisModule_CreateTimer(ctx, td->interval, TimerCallback, td);
     } else {
+        // replica also delete timer data, there is a race condition between replica timer firing
+        // and receiving master's 'DEL' action
         RedisModuleKey *mk = RedisModule_OpenKey(ctx, td->key, REDISMODULE_WRITE);
         RedisModule_DeleteKey(mk);
         RedisModule_CloseKey(mk);
         RedisModule_Replicate(ctx, "DEL", "s", td->key);
+        RedisModule_Assert(td->deleted);
         DeleteTimerData(ctx, td);
     }
 }
@@ -91,6 +93,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
  * This command creates a new timer.
  * Syntax: TIMER.NEW key function interval [LOOP] numkeys [key [key ...]] [arg [arg ...]]
  * If LOOP is specified, after executing a new timer is created
+ * Return 1 if new timer created, 0 if replace old timer
  */
 int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_AutoMemory(ctx);
@@ -157,7 +160,8 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     }
     RedisModule_ModuleTypeSetValue(mk, moduleType, td);
     RedisModule_CloseKey(mk);
-    if (old) {
+    if (old) {  // clear asap
+        RedisModule_Assert(old->deleted);
         RedisModule_StopTimer(ctx, old->tid, NULL);
         DeleteTimerData(ctx, old);
     }
@@ -167,6 +171,11 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     return REDISMODULE_OK;
 }
 
+
+/* Syntax: TIMER.KILL key
+*  Return 1 if a timer been kill, else 0
+*  More effective than DEL key, will clear all the resources
+*/
 int TimerKillCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_AutoMemory(ctx);
     if (argc != 2) {
@@ -181,14 +190,17 @@ int TimerKillCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         return RedisModule_ReplyWithError(ctx, "ERR wrong type");
     }
     TimerData *td = RedisModule_ModuleTypeGetValue(mk);
-
     RedisModule_DeleteKey(mk);
+    RedisModule_Assert(td->deleted);
     RedisModule_StopTimer(ctx, td->tid, NULL);
     DeleteTimerData(ctx, td);
     RedisModule_ReplicateVerbatim(ctx);
     return RedisModule_ReplyWithLongLong(ctx, 1);
 }
 
+/* Syntax: TIMER.INFO key
+*  Return timer info, remaining is the next fire time interval
+*/
 int TimerInfoCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     RedisModule_AutoMemory(ctx);
     if (argc != 2) {

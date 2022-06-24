@@ -62,8 +62,12 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         DeleteTimerData(ctx, td);
         return;
     }
-    /* if master, execute the script, replica will copy master's actions */
-    if (isMaster) {
+    size_t size;
+    RedisModule_StringPtrLen(td->function, &size);
+    // if master, execute the script, replica will copy master's actions
+    // empty function means nothing to do, user still can listen to keyspace events to
+    // know timer has fired
+    if (isMaster && size > 0) {
         char fmt[2+MAX_DATA_LEN+1] = "slssssssss";
         fmt[2+td->datalen] = '\0';
         rep = RedisModule_Call(ctx, "FCALL", fmt, td->function, td->numkeys,
@@ -72,6 +76,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         RedisModule_FreeCallReply(rep);
     }
 
+    RedisModule_NotifyKeyspaceEvent(ctx, REDISMODULE_NOTIFY_MODULE, "timer-fired", td->key);
     /* if loop, create a new timer and reinsert
      * if not, delete the timer data
      */

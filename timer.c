@@ -54,7 +54,6 @@ void DeleteTimerData(RedisModuleCtx *ctx, TimerData *td) {
 /* callback called by the Timer API. Data contains a TimerData structure */
 void TimerCallback(RedisModuleCtx *ctx, void *data) {
     RedisModule_AutoMemory(ctx);
-    RedisModuleCallReply *rep;
     TimerData *td;
 
     td = (TimerData*)data;
@@ -68,12 +67,11 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
     // empty function means nothing to do, user still can listen to keyspace events to
     // know timer has fired
     if (isMaster && size > 0) {
-        char fmt[2+MAX_DATA_LEN+1] = "slssssssss";
-        fmt[2+td->datalen] = '\0';
-        rep = RedisModule_Call(ctx, "FCALL", fmt, td->function, td->numkeys,
+        char fmt[3+MAX_DATA_LEN+1] = "!slssssssss";
+        fmt[3+td->datalen] = '\0';
+        RedisModule_Call(ctx, "FCALL", fmt, td->function, td->numkeys,
                                 td->data[0], td->data[1], td->data[2], td->data[3],
                                 td->data[4], td->data[5], td->data[6], td->data[7]);
-        RedisModule_FreeCallReply(rep);
     }
 
     RedisModule_NotifyKeyspaceEvent(ctx, REDISMODULE_NOTIFY_MODULE, "timer-fired", td->key);

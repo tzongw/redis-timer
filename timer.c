@@ -30,6 +30,9 @@ static RedisModuleType *moduleType;
 static long long timers = 0;
 static bool isMaster = true;
 
+static const int MODULE_VERSION = 1;
+static const int ENCODE_VERSION = 1;
+
 
 void roleChangeCallback(RedisModuleCtx *ctx, RedisModuleEvent e, uint64_t sub, void *data)
 {
@@ -81,7 +84,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         RedisModuleKey *mk = RedisModule_OpenKey(ctx, td->key, REDISMODULE_WRITE);
         RedisModule_DeleteKey(mk);
         RedisModule_CloseKey(mk);
-        RedisModule_Replicate(ctx, "DEL", "s", td->key);
+        RedisModule_Replicate(ctx, "timer.kill", "s", td->key);
         RedisModule_Assert(td->deleted);
         DeleteTimerData(ctx, td);
     }
@@ -235,16 +238,19 @@ int TimerInfoCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 }
 
 void *timer_RDBLoadCallBack(RedisModuleIO *io, int encver) {
-    REDISMODULE_NOT_USED(encver);
+    if (encver != ENCODE_VERSION) {
+        RedisModule_LogIOError(io, "warning", "decode failed, rdb ver: %d, my ver: %d", encver, ENCODE_VERSION);
+        return NULL;
+    }
     RedisModuleCtx *ctx = RedisModule_GetContextFromIO(io);
     RedisModule_AutoMemory(ctx);
     int datalen = (int)RedisModule_LoadSigned(io);
     TimerData *td = (TimerData*)RedisModule_Alloc(sizeof(*td)+sizeof(RedisModuleString*)*datalen);
+    timers++;
     td->datalen = datalen;
     for (int i = 0; i < td->datalen; i++) {
         td->data[i] = RedisModule_LoadString(io);
     }
-    timers++;
     td->key = RedisModule_LoadString(io);
     td->function = RedisModule_LoadString(io);
     td->numkeys = (int)RedisModule_LoadSigned(io);
@@ -298,7 +304,7 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     REDISMODULE_NOT_USED(argv);
     REDISMODULE_NOT_USED(argc);
     /* Register the module itself */
-    if (RedisModule_Init(ctx, "timer", 1, REDISMODULE_APIVER_1) == REDISMODULE_ERR) {
+    if (RedisModule_Init(ctx, "timer", MODULE_VERSION, REDISMODULE_APIVER_1) == REDISMODULE_ERR) {
         return REDISMODULE_ERR;
     }
     RedisModule_AutoMemory(ctx);
@@ -322,7 +328,7 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
         .aof_rewrite = timer_AOFRewriteCallBack,
         .free = timer_FreeCallBack,
     };
-    moduleType = RedisModule_CreateDataType(ctx, "timer-tzw", 0, &tm);
+    moduleType = RedisModule_CreateDataType(ctx, "timer-tzw", ENCODE_VERSION, &tm);
     if (moduleType == NULL) {
         return REDISMODULE_ERR;
     }

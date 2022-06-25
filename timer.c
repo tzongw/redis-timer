@@ -80,10 +80,9 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         td->tid = RedisModule_CreateTimer(ctx, td->interval, TimerCallback, td);
     } else {
         // replica also delete timer data, there is a race condition between replica timer firing
-        // and receiving master's 'DEL' action
+        // and receiving master's 'timer.kill' action
         RedisModuleKey *mk = RedisModule_OpenKey(ctx, td->key, REDISMODULE_WRITE);
         RedisModule_DeleteKey(mk);
-        RedisModule_CloseKey(mk);
         RedisModule_Replicate(ctx, "timer.kill", "s", td->key);
         RedisModule_Assert(td->deleted);
         DeleteTimerData(ctx, td);
@@ -158,7 +157,7 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     
     RedisModuleKey *mk = RedisModule_OpenKey(ctx, key, REDISMODULE_WRITE); /* auto closed */
     if (RedisModule_ModuleTypeGetType(mk) == moduleType) {
-        old = RedisModule_ModuleTypeGetValue(mk);  // replace timer
+        old = RedisModule_ModuleTypeGetValue(mk);  // reset timer
     }
     RedisModule_ModuleTypeSetValue(mk, moduleType, td);
     if (old) {  // clear asap
@@ -167,7 +166,6 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
         DeleteTimerData(ctx, old);
     }
     RedisModule_ReplicateVerbatim(ctx);
-    
     RedisModule_ReplyWithLongLong(ctx, old ? 0 : 1);
     return REDISMODULE_OK;
 }

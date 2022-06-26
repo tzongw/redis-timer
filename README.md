@@ -67,11 +67,14 @@ $ cat xadd.lua | redis-cli -x FUNCTION LOAD REPLACE
 127.0.0.1:6379> xread block 0 streams jobs "1656255594763-0"
 ```
 
-data types that support blocking read work similarly, like `Lists`, `Sorted Sets`. `Pub/Sub` is another option.
+data types that support blocking read work similarly, like `Lists`, `Sorted Sets`. 
+
+`Pub/Sub` is another option.
 
 **Notes:**
 
 - if a timer with the same name `id` already exists, it will reset the timer.
+- when an one-time timer fired, it will be removed from db automatically.
 - no info is provided regarding the execution of the script
 - for simplicity, in periodic timers the execution interval will start counting at the end of the previous execution, and not at the beginning. After some time, the exact time of the triggering may be difficult to deduce, particularly if the the script takes a long time to execute or if different executions require different ammounts of time.
 
@@ -86,7 +89,7 @@ Removes a timer.
 
 
 **Notes:**
-- `DEL` command also works as removing a timer, but it's less efficient. [MORE INFO](https://github.com/tzongw/redis-timer/blob/5a21c598e470df765a4b260a37c3ab4f2bc0e0ed/timer.c#L291)
+- `DEL`(or `SET`) command also serves as removing a timer, but is less efficient. [MORE INFO](https://github.com/tzongw/redis-timer/blob/5a21c598e470df765a4b260a37c3ab4f2bc0e0ed/timer.c#L291)
 
 
 ### `TIMER.INFO id`

@@ -50,7 +50,7 @@ $ cat xadd.lua | redis-cli -x FUNCTION LOAD REPLACE
 
 3. create a timer in another redis-cli.
 ```
-TIMER.NEW id timer_xadd 1000 1 jobs field1 value1 field2 value2
+127.0.0.1:6379> TIMER.NEW id timer_xadd 1000 1 jobs field1 value1 field2 value2
 ```
 4. after 1 second, you will see the `XREAD` in step 2 output like this.
 ```

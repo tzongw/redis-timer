@@ -36,6 +36,8 @@ new timer will be setup with the same time.
 
 **Examples:**
 
+example with [Streams](https://redis.io/docs/manual/data-types/streams/)
+
 1. load [xadd.lua](https://github.com/tzongw/redis-timer/blob/789d78ec7377dee01fd2659eeef70f1dc03dfe5e/xadd.lua) in command line.
 ```
 $ cat xadd.lua | redis-cli -x FUNCTION LOAD REPLACE
@@ -43,8 +45,9 @@ $ cat xadd.lua | redis-cli -x FUNCTION LOAD REPLACE
 ```
 2. do a blocking [XREAD](https://redis.io/commands/xread/) or [XREADGROUP](https://redis.io/commands/xreadgroup/) in redis-cli.
 ```
-127.0.0.1:6379> XREAD block 0 streams jobs $
+127.0.0.1:6379> XREAD block 0 streams jobs 0
 ```
+
 3. create a timer in another redis-cli.
 ```
 TIMER.NEW id timer_xadd 1000 1 jobs field1 value1 field2 value2
@@ -58,6 +61,10 @@ TIMER.NEW id timer_xadd 1000 1 jobs field1 value1 field2 value2
          3) "field2"
          4) "value2"
 (1016.89s)
+```
+5. repeat step 2 using the returning `stream id` (`"1656255594763-0"` in this example).
+```
+127.0.0.1:6379> xread block 0 streams jobs "1656255594763-0"
 ```
 
 data types that support blocking read work similarly, like `Lists`, `Sorted Sets`. `Pub/Sub` is another option.

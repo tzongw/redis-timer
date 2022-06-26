@@ -2,6 +2,11 @@
 
 This module allows the delayed execution of LUA scripts, both periodic and one-time.
 
+# Features
+
+0. High performance.
+0. Supports persistence, both RDB and AOF.
+0. Supports replication and cluster.
 
 ## Quick start
 

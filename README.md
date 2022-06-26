@@ -4,9 +4,9 @@ This module allows the delayed execution of LUA scripts, both periodic and one-t
 
 # Features
 
-0. High performance.
-0. Supports persistence, both RDB and AOF.
-0. Supports replication and cluster.
+1. High performance.
+2. Supports persistence, both RDB and AOF.
+3. Supports replication and cluster.
 
 ## Quick start
 
@@ -22,7 +22,7 @@ This module allows the delayed execution of LUA scripts, both periodic and one-t
 
 ### `TIMER.NEW id function milliseconds [LOOP] numkeys [key [key ...]] [arg [arg ...]]`
 
-Create and activate a new timer. Also an value with name `id` will be created in redis db.
+Create and activate a new timer. Also a value with name `id` will be created in redis db.
 ```
 127.0.0.1:6379> TIMER.NEW id function 10000 LOOP 1 key arg
 (integer) 1
@@ -34,11 +34,39 @@ The `function` will be
 executed after `milliseconds` with `numkeys [key [key ...]] [arg [arg ...]]` as arguments via [FCALL](https://redis.io/commands/fcall/). If `LOOP` is specified, after the execution a
 new timer will be setup with the same time.
 
+**Examples:**
+
+1. load [xadd.lua](https://github.com/tzongw/redis-timer/blob/789d78ec7377dee01fd2659eeef70f1dc03dfe5e/xadd.lua) in command line.
+```
+$ cat xadd.lua | redis-cli -x FUNCTION LOAD REPLACE
+"timer"
+```
+2. do a blocking [XREAD](https://redis.io/commands/xread/) or [XREADGROUP](https://redis.io/commands/xreadgroup/) in redis-cli.
+```
+127.0.0.1:6379> XREAD block 0 streams jobs $
+```
+3. create a timer in another redis-cli.
+```
+TIMER.NEW id timer_xadd 1000 1 jobs field1 value1 field2 value2
+```
+4. after 1 second, you will see the `XREAD` in step 2 output like this.
+```
+127.0.0.1:6379> xread block 0 streams jobs $
+1# "jobs" => 1) 1) "1656251442279-0"
+      2) 1) "field1"
+         2) "value1"
+         3) "field2"
+         4) "value2"
+(1016.89s)
+```
+
+data types that support blocking read work similarly, like `Lists`, `Sorted Sets`. `Pub/Sub` is another option.
+
 **Notes:**
 
+- if a timer with the same name `id` already exists, it will reset the timer.
 - no info is provided regarding the execution of the script
 - for simplicity, in periodic timers the execution interval will start counting at the end of the previous execution, and not at the beginning. After some time, the exact time of the triggering may be difficult to deduce, particularly if the the script takes a long time to execute or if different executions require different ammounts of time.
-- if a timer with the same name `id` already exists, it will reset the timer.
 
 **Reply:** 0 if reset a timer, 1 if create a new timer.
 

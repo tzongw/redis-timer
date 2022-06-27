@@ -54,7 +54,7 @@ $ cat xadd.lua | redis-cli -x FUNCTION LOAD REPLACE
 ```
 4. after 1 second, you will see the `XREAD` in step 2 output like this.
 ```
-127.0.0.1:6379> xread block 0 streams jobs $
+127.0.0.1:6379> xread block 0 streams jobs 0
 1# "jobs" => 1) 1) "1656251442279-0"
       2) 1) "field1"
          2) "value1"

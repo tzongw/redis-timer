@@ -74,7 +74,7 @@ data types that support blocking read work similarly, like `Lists`, `Sorted Sets
 **Notes:**
 
 - if a timer with the same name `id` already exists, it will reset the timer.
-- when an one-time timer fired, it will be removed from db automatically.
+- when an one-time timer fire, it will be removed from db automatically(though it doesn't have an expiration).
 - no info is provided regarding the execution of the script
 - for simplicity, in periodic timers the execution interval will start counting at the end of the previous execution, and not at the beginning. After some time, the exact time of the triggering may be difficult to deduce, particularly if the the script takes a long time to execute or if different executions require different ammounts of time.
 

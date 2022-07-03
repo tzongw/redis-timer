@@ -1,13 +1,6 @@
 #include <string.h>
 #include <strings.h>
 #include <stdbool.h>
-#include <pthread.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <netinet/tcp.h>
 
 #define REDISMODULE_EXPERIMENTAL_API
 #include "redismodule.h"

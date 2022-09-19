@@ -52,6 +52,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
     TimerData *td;
 
     td = (TimerData*)data;
+    RedisModule_KeyExists(ctx, td->key);  // actively expire key
     if (td->deleted) { /* already deleted from db, clear it */
         DeleteTimerData(ctx, td);
         return;

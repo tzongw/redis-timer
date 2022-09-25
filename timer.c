@@ -321,9 +321,7 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
     
     RedisModule_SubscribeToServerEvent(ctx,
             RedisModuleEvent_ReplicationRoleChanged, roleChangeCallback);
-    RedisModuleServerInfoData *info = RedisModule_GetServerInfo(ctx, "replication");
-    const char *role = RedisModule_ServerInfoGetFieldC(info, "role");
-    isMaster = strcasecmp(role, "master") == 0;
+    isMaster = RedisModule_GetContextFlags(ctx) & REDISMODULE_CTX_FLAGS_MASTER;
     RedisModule_Log(ctx, "notice", "role: %s", isMaster ? "master": "slave");
     return REDISMODULE_OK;
 }

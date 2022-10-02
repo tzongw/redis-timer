@@ -90,6 +90,7 @@ Removes a timer.
 
 **Notes:**
 - `DEL`(or `SET`) command also serves as removing a timer, but is less efficient. [MORE INFO](https://github.com/tzongw/redis-timer/blob/5a21c598e470df765a4b260a37c3ab4f2bc0e0ed/timer.c#L291)
+- *DO NOT* `RENAME` or `MOVE` a timer, because a timer memorizes it's key and db when created, so this may not work as you expect.
 
 
 ### `TIMER.INFO id`

@@ -29,6 +29,7 @@ static const int ENCODE_VERSION = 1;
 
 void roleChangeCallback(RedisModuleCtx *ctx, RedisModuleEvent e, uint64_t sub, void *data)
 {
+    RedisModule_AutoMemory(ctx);
     REDISMODULE_NOT_USED(e);
     REDISMODULE_NOT_USED(data);
     isMaster = (sub == REDISMODULE_EVENT_REPLROLECHANGED_NOW_MASTER);
@@ -75,6 +76,31 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         RedisModule_Assert(td->deleted);
         DeleteTimerData(ctx, td);
     }
+}
+
+
+int keyEventsCallback(RedisModuleCtx *ctx, int type, const char *event, RedisModuleString *key) {
+    RedisModule_AutoMemory(ctx);
+    REDISMODULE_NOT_USED(type);
+    if (strcasecmp(event, "rename_to") == 0) {
+        RedisModuleKey *mk = RedisModule_OpenKey(ctx, key, REDISMODULE_READ);
+        if (RedisModule_ModuleTypeGetType(mk) == moduleType) {
+            TimerData *td = RedisModule_ModuleTypeGetValue(mk);
+            RedisModule_FreeString(ctx, td->key);
+            RedisModule_RetainString(ctx, key);
+            td->key = key;
+        }
+    } else if (strcasecmp(event, "move_to") == 0) {
+        RedisModuleKey *mk = RedisModule_OpenKey(ctx, key, REDISMODULE_READ);
+        if (RedisModule_ModuleTypeGetType(mk) == moduleType) {
+            TimerData *td = RedisModule_ModuleTypeGetValue(mk);
+            uint64_t remaining = td->interval;
+            RedisModule_GetTimerInfo(ctx, td->tid, &remaining, NULL);
+            RedisModule_StopTimer(ctx, td->tid, NULL);
+            td->tid = RedisModule_CreateTimer(ctx, remaining, TimerCallback, td);
+        }
+    }
+    return REDISMODULE_OK;
 }
 
 /* Entrypoint for TIMER.NEW command.
@@ -323,6 +349,8 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
             RedisModuleEvent_ReplicationRoleChanged, roleChangeCallback);
     isMaster = RedisModule_GetContextFlags(ctx) & REDISMODULE_CTX_FLAGS_MASTER;
     RedisModule_Log(ctx, "notice", "role: %s", isMaster ? "master": "slave");
+    
+    RedisModule_SubscribeToKeyspaceEvents(ctx, REDISMODULE_NOTIFY_GENERIC, keyEventsCallback);
     return REDISMODULE_OK;
 }
 

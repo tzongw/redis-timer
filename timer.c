@@ -15,6 +15,7 @@ typedef struct TimerData {
     int numkeys;     /* function numkeys */
     bool loop;                   /* loop timer */
     bool deleted;              /* timer key been deleted from db */
+    int dbid;       /* key's dbid, -1 if timer's dbid is the same with key's */
     RedisModuleTimerID tid;     /* internal id for the timer API */
     RedisModuleString *data[];  /* function keys & args */
 } TimerData;
@@ -53,6 +54,9 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
     TimerData *td;
 
     td = (TimerData*)data;
+    if (td->dbid != -1) {
+        RedisModule_SelectDb(ctx, td->dbid);
+    }
     RedisModule_KeyExists(ctx, td->key);  // actively expire key
     if (td->deleted) { /* already deleted from db, clear it */
         DeleteTimerData(ctx, td);
@@ -67,6 +71,7 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
      */
     if (td->loop) {
         td->tid = RedisModule_CreateTimer(ctx, td->interval, TimerCallback, td);
+        td->dbid = -1; /* no need to select db again next time */
     } else {
         // replica also delete timer data, there is a race condition between replica timer firing
         // and receiving master's 'timer.kill' action
@@ -98,6 +103,7 @@ int keyEventsCallback(RedisModuleCtx *ctx, int type, const char *event, RedisMod
             RedisModule_GetTimerInfo(ctx, td->tid, &remaining, NULL);
             RedisModule_StopTimer(ctx, td->tid, NULL);
             td->tid = RedisModule_CreateTimer(ctx, remaining, TimerCallback, td);
+            td->dbid = -1;
         }
     }
     return REDISMODULE_OK;
@@ -167,6 +173,7 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
 
     /* create the timer through the Timer API */
     td->tid = RedisModule_CreateTimer(ctx, interval, TimerCallback, td);
+    td->dbid = -1; /* timer' dbid is always the same with key's in this way */
     td->deleted = false;
     
     RedisModuleKey *mk = RedisModule_OpenKey(ctx, key, REDISMODULE_WRITE); /* auto closed */
@@ -270,6 +277,8 @@ void *timer_RDBLoadCallBack(RedisModuleIO *io, int encver) {
     td->loop = RedisModule_LoadSigned(io) == 1;
     td->deleted = false;
     td->tid = RedisModule_CreateTimer(ctx, td->interval, TimerCallback, td);
+    /* see https://github.com/redis/redis/pull/11361 */
+    td->dbid = RedisModule_GetDbIdFromIO(io);
     return td;
 }
 

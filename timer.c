@@ -52,6 +52,7 @@ void DeleteTimerData(RedisModuleCtx *ctx, TimerData *td) {
 void TimerCallback(RedisModuleCtx *ctx, void *data) {
     RedisModule_AutoMemory(ctx);
     TimerData *td;
+    bool delete_td = false;
 
     td = (TimerData*)data;
     if (td->dbid != -1) {
@@ -61,10 +62,6 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
     if (td->deleted) { /* already deleted from db, clear it */
         DeleteTimerData(ctx, td);
         return;
-    }
-    // if master, execute the script, replica will copy master's actions
-    if (isMaster) {
-        RedisModule_Call(ctx, "FCALL", "!slv", td->function, (long long)td->numkeys, td->data, (size_t)td->datalen);
     }
     /* if loop, create a new timer and reinsert
      * if not, delete the timer data
@@ -79,6 +76,15 @@ void TimerCallback(RedisModuleCtx *ctx, void *data) {
         RedisModule_DeleteKey(mk);
         RedisModule_Replicate(ctx, "timer.kill", "s", td->key);
         RedisModule_Assert(td->deleted);
+        delete_td = true;
+    }
+    // execution at last to avoid function making `td` invalid (e.g. timer.kill in function)
+    // also make interval more reliable for slow function
+    if (isMaster) {
+        // if master, execute the script, replica will copy master's actions
+        RedisModule_Call(ctx, "FCALL", "!slv", td->function, (long long)td->numkeys, td->data, (size_t)td->datalen);
+    }
+    if (delete_td) {
         DeleteTimerData(ctx, td);
     }
 }

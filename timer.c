@@ -139,7 +139,7 @@ int TimerNewCommand(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
     }
     key = argv[1];
     function = argv[2];
-    if (RedisModule_StringToLongLong(argv[3], &interval) != REDISMODULE_OK) {
+    if (RedisModule_StringToLongLong(argv[3], &interval) != REDISMODULE_OK || interval <= 0) {
         return RedisModule_ReplyWithError(ctx, "ERR invalid interval");
     }
 
